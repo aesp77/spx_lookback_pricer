@@ -238,3 +238,132 @@ For questions or contributions, please open an issue on the repository.
 
 **Note**: This is a pricing library for educational purposes. Always validate results independently before using in production.
 # spx_lookback_pricer
+
+
+# Database Schema for SPX Lookback Pricer
+
+## Tables Structure
+
+### 1. `spx_spot_prices`
+Stores daily SPX spot prices and returns
+```sql
+CREATE TABLE spx_spot_prices (
+    date DATE PRIMARY KEY,
+    last FLOAT NOT NULL,
+    daily_return FLOAT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+### 2. `spx_ssvi_parameters`
+Stores SSVI model parameters for vol surface construction
+```sql
+CREATE TABLE spx_ssvi_parameters (
+    date DATE PRIMARY KEY,
+    theta FLOAT NOT NULL,
+    rho FLOAT NOT NULL,
+    beta FLOAT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+### 3. `spx_vol_surface`
+Stores implied volatility surface data
+```sql
+CREATE TABLE spx_vol_surface (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    date DATE NOT NULL,
+    strike FLOAT NOT NULL,  -- Relative strike (0.6 to 1.5)
+    tenor VARCHAR(10) NOT NULL,  -- '1m', '2m', '3m', etc.
+    implied_vol FLOAT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_date_strike_tenor (date, strike, tenor),
+    INDEX idx_date (date)
+);
+```
+
+### 4. `spx_dividend_yield`
+Stores dividend yield data
+```sql
+CREATE TABLE spx_dividend_yield (
+    date DATE PRIMARY KEY,
+    dividend_yield FLOAT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+### 5. `ois_curve`
+Stores OIS (risk-free rate) curve data
+```sql
+CREATE TABLE ois_curve (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    date DATE NOT NULL,
+    tenor_years FLOAT NOT NULL,  -- Time to maturity in years
+    rate FLOAT NOT NULL,  -- Rate in decimal (0.05 = 5%)
+    currency VARCHAR(3) DEFAULT 'USD',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_date_tenor (date, tenor_years),
+    INDEX idx_date (date)
+);
+```
+
+### 6. `spx_master_dataset` (Optional - Denormalized View)
+Pre-joined view or materialized table for quick access
+```sql
+CREATE TABLE spx_master_dataset (
+    date DATE PRIMARY KEY,
+    spot_price FLOAT,
+    daily_return FLOAT,
+    dividend_yield FLOAT,
+    theta FLOAT,
+    rho FLOAT,
+    beta FLOAT,
+    -- Add specific vol points as needed
+    iv_60_1m FLOAT,
+    iv_70_1m FLOAT,
+    iv_80_1m FLOAT,
+    -- ... more columns for each strike/tenor combination
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## Database Connection Configuration
+
+### For SQLite (Development)
+```python
+DATABASE_CONFIG = {
+    'type': 'sqlite',
+    'path': 'spx_lookback_data.db'
+}
+```
+
+### For PostgreSQL (Production)
+```python
+DATABASE_CONFIG = {
+    'type': 'postgresql',
+    'host': 'localhost',
+    'port': 5432,
+    'database': 'spx_options',
+    'user': 'your_user',
+    'password': 'your_password'
+}
+```
+
+### For your PSC Database
+```python
+DATABASE_CONFIG = {
+    'type': 'psc',
+    'environment': 'Prod',  # or 'Dev'
+    'use_async': True
+}
+```
+
+## Data Flow
+
+1. **Initial Load**: Run historical data collection (2020-2025)
+2. **Daily Updates**: Automated job to fetch new data points
+3. **Query Pattern**: Join tables on date for complete dataset
+4. **Caching**: Use materialized views for frequently accessed combinations

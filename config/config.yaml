@@ -1,0 +1,56 @@
+# Configuration for SPX Lookback Pricer
+
+# Market Data Settings
+market_data:
+  default_spot: 4500.0
+  default_risk_free_rate: 0.05
+  default_dividend_yield: 0.015
+  
+# Volatility Surface Settings
+vol_surface:
+  interpolation_method: "rbf"  # Options: rbf, bilinear, cubic
+  extrapolate: true
+  min_vol: 0.01
+  max_vol: 2.0
+  
+# Monte Carlo Settings
+monte_carlo:
+  default_num_paths: 10000
+  default_num_steps: 252
+  use_antithetic: true
+  use_control_variates: false
+  random_seed: null  # Set to integer for reproducibility
+  parallel: false
+  
+# PDE Settings
+pde:
+  method: "crank-nicolson"  # Options: explicit, implicit, crank-nicolson
+  num_space_steps: 100
+  num_time_steps: 100
+  spot_multiplier: 3.0  # Maximum spot = spot * multiplier
+  
+# Greek Calculation Settings
+greeks:
+  bump_spot: 0.01  # 1% spot bump
+  bump_vol: 0.01   # 1% vol bump
+  bump_rate: 0.0001  # 1bp rate bump
+  bump_time: 0.00274  # 1 day time bump
+  method: "central"  # Options: forward, backward, central
+  
+# Pricing Settings
+pricing:
+  default_method: "analytical"  # Options: analytical, monte_carlo, pde
+  calculate_greeks: true
+  confidence_level: 0.95
+  
+# Visualization Settings
+visualization:
+  default_theme: "plotly"
+  chart_height: 400
+  chart_width: 600
+  
+# Logging Settings
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null  # Set to filename to log to file
