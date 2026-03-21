@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+.env
+data/raw/
+output/
+*.db
+*.sqlite
+.ipynb_checkpoints/
+.vscode/settings.json
+saved_models/
+checkpoints/
+results/
