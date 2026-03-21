@@ -731,101 +731,162 @@ class SPXDataLoader:
             currency="USD"
         )
     
+    def _has_table(self, conn, table_name: str) -> bool:
+        """Check if a table exists in the database."""
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+        return row is not None
+
     def get_latest_data(self) -> Dict[str, Any]:
         """
         Get the most recent data available in the database.
-        Useful for pricing when you need the latest market snapshot.
-        
+        Reads from standard schema tables (time_series, vol_surfaces, etc.)
+        with fallback to legacy tables for backward compatibility.
+
         Returns:
             Dictionary with the latest data for each type
         """
         with self._get_db_connection() as conn:
-            # Get latest spot price
-            spot_df = pd.read_sql_query(
-                "SELECT * FROM spx_spot_prices ORDER BY date DESC LIMIT 1", 
-                conn
-            )
-            
-            # Get latest SSVI parameters
-            ssvi_df = pd.read_sql_query(
-                "SELECT * FROM spx_ssvi_parameters ORDER BY date DESC LIMIT 1", 
-                conn
-            )
-            
-            # Get latest vol surface (all points for the latest date)
-            latest_vol_date = pd.read_sql_query(
-                "SELECT MAX(date) as max_date FROM spx_vol_surface", 
-                conn
-            )
-            
-            vol_df = pd.DataFrame()
-            if not latest_vol_date.empty and latest_vol_date.iloc[0]['max_date']:
-                vol_df = pd.read_sql_query(
-                    "SELECT * FROM spx_vol_surface WHERE date = ?", 
+            use_standard = self._has_table(conn, "time_series")
+
+            # --- Spot price ---
+            if use_standard:
+                spot_df = pd.read_sql_query(
+                    "SELECT date, value AS last FROM time_series "
+                    "WHERE symbol = 'SPX' AND field = 'spot' ORDER BY date DESC LIMIT 1",
                     conn,
-                    params=(latest_vol_date.iloc[0]['max_date'],)
                 )
-            
-            # Get latest dividend yield
-            div_df = pd.read_sql_query(
-                "SELECT * FROM spx_dividend_yield ORDER BY date DESC LIMIT 1", 
-                conn
-            )
-            
-            # Get latest OIS curve
-            latest_ois_date = pd.read_sql_query(
-                "SELECT MAX(date) as max_date FROM ois_curve", 
-                conn
-            )
-            
-            ois_df = pd.DataFrame()
-            if not latest_ois_date.empty and latest_ois_date.iloc[0]['max_date']:
-                ois_df = pd.read_sql_query(
-                    "SELECT * FROM ois_curve WHERE date = ? ORDER BY tenor_years", 
+                ret_df = pd.read_sql_query(
+                    "SELECT value AS daily_return FROM time_series "
+                    "WHERE symbol = 'SPX' AND field = 'daily_return' ORDER BY date DESC LIMIT 1",
                     conn,
-                    params=(latest_ois_date.iloc[0]['max_date'],)
                 )
-            
-            # Compile results
+            else:
+                spot_df = pd.read_sql_query(
+                    "SELECT * FROM spx_spot_prices ORDER BY date DESC LIMIT 1", conn
+                )
+                ret_df = spot_df
+
+            # --- SSVI parameters ---
+            if use_standard and self._has_table(conn, "ssvi_parameters"):
+                ssvi_df = pd.read_sql_query(
+                    "SELECT date, theta, rho, beta FROM ssvi_parameters "
+                    "WHERE symbol = 'SPX' ORDER BY date DESC LIMIT 1",
+                    conn,
+                )
+            else:
+                ssvi_df = pd.read_sql_query(
+                    "SELECT * FROM spx_ssvi_parameters ORDER BY date DESC LIMIT 1", conn
+                )
+
+            # --- Vol surface ---
+            if use_standard:
+                latest_vol_date = pd.read_sql_query(
+                    "SELECT MAX(date) as max_date FROM vol_surfaces WHERE symbol = 'SPX'",
+                    conn,
+                )
+                vol_df = pd.DataFrame()
+                if not latest_vol_date.empty and latest_vol_date.iloc[0]["max_date"]:
+                    vol_df = pd.read_sql_query(
+                        "SELECT date, strike, expiry AS tenor, iv AS implied_vol "
+                        "FROM vol_surfaces WHERE symbol = 'SPX' AND date = ?",
+                        conn,
+                        params=(latest_vol_date.iloc[0]["max_date"],),
+                    )
+            else:
+                latest_vol_date = pd.read_sql_query(
+                    "SELECT MAX(date) as max_date FROM spx_vol_surface", conn
+                )
+                vol_df = pd.DataFrame()
+                if not latest_vol_date.empty and latest_vol_date.iloc[0]["max_date"]:
+                    vol_df = pd.read_sql_query(
+                        "SELECT * FROM spx_vol_surface WHERE date = ?",
+                        conn,
+                        params=(latest_vol_date.iloc[0]["max_date"],),
+                    )
+
+            # --- Dividend yield ---
+            if use_standard:
+                div_df = pd.read_sql_query(
+                    "SELECT date, value AS dividend_yield FROM time_series "
+                    "WHERE symbol = 'SPX' AND field = 'dividend_yield' ORDER BY date DESC LIMIT 1",
+                    conn,
+                )
+            else:
+                div_df = pd.read_sql_query(
+                    "SELECT * FROM spx_dividend_yield ORDER BY date DESC LIMIT 1", conn
+                )
+
+            # --- OIS curve ---
+            if use_standard:
+                latest_ois_date = pd.read_sql_query(
+                    "SELECT MAX(date) as max_date FROM term_structures WHERE curve_id = 'USD_OIS'",
+                    conn,
+                )
+                ois_df = pd.DataFrame()
+                if not latest_ois_date.empty and latest_ois_date.iloc[0]["max_date"]:
+                    ois_df = pd.read_sql_query(
+                        "SELECT date, tenor, value AS rate FROM term_structures "
+                        "WHERE curve_id = 'USD_OIS' AND date = ? ORDER BY tenor",
+                        conn,
+                        params=(latest_ois_date.iloc[0]["max_date"],),
+                    )
+            else:
+                latest_ois_date = pd.read_sql_query(
+                    "SELECT MAX(date) as max_date FROM ois_curve", conn
+                )
+                ois_df = pd.DataFrame()
+                if not latest_ois_date.empty and latest_ois_date.iloc[0]["max_date"]:
+                    ois_df = pd.read_sql_query(
+                        "SELECT * FROM ois_curve WHERE date = ? ORDER BY tenor_years",
+                        conn,
+                        params=(latest_ois_date.iloc[0]["max_date"],),
+                    )
+
+            # Compile results — same structure as before
             latest_data = {
                 'spot': {
                     'date': spot_df.iloc[0]['date'] if not spot_df.empty else None,
                     'price': spot_df.iloc[0]['last'] if not spot_df.empty else None,
-                    'return': spot_df.iloc[0]['daily_return'] if not spot_df.empty else None
+                    'return': (ret_df.iloc[0]['daily_return']
+                               if not ret_df.empty and 'daily_return' in ret_df.columns
+                               else None),
                 },
                 'ssvi': {
                     'date': ssvi_df.iloc[0]['date'] if not ssvi_df.empty else None,
-                    'params': ssvi_df.iloc[0].to_dict() if not ssvi_df.empty else None
+                    'params': ssvi_df.iloc[0].to_dict() if not ssvi_df.empty else None,
                 },
                 'vol_surface': {
                     'date': latest_vol_date.iloc[0]['max_date'] if not latest_vol_date.empty else None,
                     'points': len(vol_df),
-                    'data': vol_df
+                    'data': vol_df,
                 },
                 'dividend': {
                     'date': div_df.iloc[0]['date'] if not div_df.empty else None,
-                    'yield': div_df.iloc[0]['dividend_yield'] if not div_df.empty else None
+                    'yield': div_df.iloc[0]['dividend_yield'] if not div_df.empty else None,
                 },
                 'ois_curve': {
                     'date': latest_ois_date.iloc[0]['max_date'] if not latest_ois_date.empty else None,
                     'points': len(ois_df),
-                    'data': ois_df
-                }
+                    'data': ois_df,
+                },
             }
-            
+
             # Print summary
             print("\nLatest data available:")
-            print(f"  Spot: {latest_data['spot']['date']} - ${latest_data['spot']['price']:,.2f}" 
+            print(f"  Spot: {latest_data['spot']['date']} - ${latest_data['spot']['price']:,.2f}"
                   if latest_data['spot']['price'] else "  Spot: No data")
-            print(f"  SSVI: {latest_data['ssvi']['date']}" 
+            print(f"  SSVI: {latest_data['ssvi']['date']}"
                   if latest_data['ssvi']['date'] else "  SSVI: No data")
-            print(f"  Vol Surface: {latest_data['vol_surface']['date']} ({latest_data['vol_surface']['points']} points)" 
+            print(f"  Vol Surface: {latest_data['vol_surface']['date']} ({latest_data['vol_surface']['points']} points)"
                   if latest_data['vol_surface']['date'] else "  Vol Surface: No data")
-            print(f"  Dividend: {latest_data['dividend']['date']} - {latest_data['dividend']['yield']:.3%}" 
+            print(f"  Dividend: {latest_data['dividend']['date']} - {latest_data['dividend']['yield']:.3%}"
                   if latest_data['dividend']['yield'] else "  Dividend: No data")
-            print(f"  OIS Curve: {latest_data['ois_curve']['date']} ({latest_data['ois_curve']['points']} points)" 
+            print(f"  OIS Curve: {latest_data['ois_curve']['date']} ({latest_data['ois_curve']['points']} points)"
                   if latest_data['ois_curve']['date'] else "  OIS Curve: No data")
-            
+
             return latest_data
         """Convert tenor string to years"""
         if tenor.endswith('m'):
