@@ -5,13 +5,14 @@ Run this daily or as needed to keep data current.
 """
 
 import sys
-import os
 import asyncio
 from datetime import datetime
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from spx_lookback_pricer.data.market_data import SPXDataLoader, DatabaseConfig
 
-from data.market_data import SPXDataLoader, DatabaseConfig
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = PROJECT_ROOT / "data" / "db" / "spx_lookback_pricer.db"
 
 async def update_database(days_back: int = 5):
     """
@@ -30,7 +31,7 @@ async def update_database(days_back: int = 5):
     # Use production database
     config = DatabaseConfig(
         db_type='sqlite',
-        db_path='spx_lookback_data.db'
+        db_path=str(DB_PATH)
     )
     loader = SPXDataLoader(config)
     
@@ -68,7 +69,7 @@ async def check_data_for_pricing():
     
     config = DatabaseConfig(
         db_type='sqlite',
-        db_path='spx_lookback_data.db'
+        db_path=str(DB_PATH)
     )
     loader = SPXDataLoader(config)
     

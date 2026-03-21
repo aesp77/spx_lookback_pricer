@@ -1,6 +1,4 @@
-"""
-STEP 1: Adding Implied Volatility display to sidebar
-"""
+"""SPX Lookback Option Pricer — Streamlit Dashboard."""
 
 import streamlit as st
 import numpy as np
@@ -8,18 +6,15 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from scipy.stats import norm
-import sys
-import os
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from data.market_data import SPXDataLoader, DatabaseConfig
-from data.vol_surface import VolatilitySurface
-from instruments.lookback import (
+from spx_lookback_pricer.data.market_data import SPXDataLoader, DatabaseConfig
+from spx_lookback_pricer.data.vol_surface import VolatilitySurface
+from spx_lookback_pricer.instruments.lookback import (
     PercentageLookbackPut,
     PercentageLookbackCall,
     RatchetingLookbackPut,
-    RatchetingLookbackCall
+    RatchetingLookbackCall,
 )
 
 st.set_page_config(
@@ -28,11 +23,15 @@ st.set_page_config(
     layout="wide"
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = PROJECT_ROOT / "data" / "db" / "spx_lookback_pricer.db"
+
+
 @st.cache_data
 def load_market_data():
     config = DatabaseConfig(
         db_type='sqlite',
-        db_path='spx_lookback_data.db'
+        db_path=str(DB_PATH),
     )
     loader = SPXDataLoader(config)
     return loader.get_latest_data(), loader
@@ -592,7 +591,7 @@ def main():
             analytical_price = None
             if payoff_spec == "Dollar Ratcheting" and protection_level == 1.0:
                 # This is equivalent to a standard fixed-strike lookback
-                from instruments.lookback import StandardFixedStrikeLookbackPut, StandardFixedStrikeLookbackCall
+                from spx_lookback_pricer.instruments.lookback import StandardFixedStrikeLookbackPut, StandardFixedStrikeLookbackCall
                 if option_type == "Put":
                     standard_lb = StandardFixedStrikeLookbackPut(strike, time_to_maturity)
                     analytical_price = standard_lb.analytical_price(spot, vol_input, rate_input, div_input)
