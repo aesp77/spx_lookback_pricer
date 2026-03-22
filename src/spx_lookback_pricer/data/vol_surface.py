@@ -18,47 +18,69 @@ class VolatilitySurface:
     Supports both discrete vol points and SSVI parameterization.
     """
     
-    def __init__(self, db_path: str = 'spx_lookback_data.db'):
+    def __init__(self, db_path: str | None = None):
+        if db_path is None:
+            from pathlib import Path
+            db_path = str(Path(__file__).resolve().parent.parent.parent.parent / "data" / "db" / "spx_lookback_pricer.db")
         self.db_path = db_path
         self.current_date = None
         self.vol_data = None
         self.ssvi_params = None
         self.interpolator = None
-        
+
+    def _has_table(self, conn, table_name: str) -> bool:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+        return row is not None
+
     def load_surface(self, valuation_date: str) -> bool:
         """
         Load volatility surface for a specific date from database.
-        
+        Reads from standard schema (vol_surfaces) with fallback to legacy (spx_vol_surface).
+
         Args:
             valuation_date: Date in 'YYYY-MM-DD' format
-            
+
         Returns:
             True if data loaded successfully
         """
         self.current_date = valuation_date
-        
+
         with sqlite3.connect(self.db_path) as conn:
+            use_standard = self._has_table(conn, "vol_surfaces")
+
             # Load vol surface points
-            self.vol_data = pd.read_sql_query(
-                """
-                SELECT strike, tenor, implied_vol 
-                FROM spx_vol_surface 
-                WHERE date = ?
-                """,
-                conn,
-                params=(valuation_date,)
-            )
-            
+            if use_standard:
+                self.vol_data = pd.read_sql_query(
+                    "SELECT strike, expiry AS tenor, iv AS implied_vol "
+                    "FROM vol_surfaces WHERE symbol = 'SPX' AND date = ?",
+                    conn,
+                    params=(valuation_date,),
+                )
+            else:
+                self.vol_data = pd.read_sql_query(
+                    "SELECT strike, tenor, implied_vol "
+                    "FROM spx_vol_surface WHERE date = ?",
+                    conn,
+                    params=(valuation_date,),
+                )
+
             # Load SSVI parameters
-            ssvi_df = pd.read_sql_query(
-                """
-                SELECT theta, rho, beta 
-                FROM spx_ssvi_parameters 
-                WHERE date = ?
-                """,
-                conn,
-                params=(valuation_date,)
-            )
+            if use_standard and self._has_table(conn, "ssvi_parameters"):
+                ssvi_df = pd.read_sql_query(
+                    "SELECT theta, rho, beta FROM ssvi_parameters "
+                    "WHERE symbol = 'SPX' AND date = ?",
+                    conn,
+                    params=(valuation_date,),
+                )
+            else:
+                ssvi_df = pd.read_sql_query(
+                    "SELECT theta, rho, beta FROM spx_ssvi_parameters WHERE date = ?",
+                    conn,
+                    params=(valuation_date,),
+                )
             
             if not ssvi_df.empty:
                 self.ssvi_params = ssvi_df.iloc[0].to_dict()

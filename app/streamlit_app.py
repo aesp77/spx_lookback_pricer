@@ -494,7 +494,7 @@ def main():
     implied_vol = None
     
     if latest_data['vol_surface']['data'] is not None:
-        vol_surface = VolatilitySurface()
+        vol_surface = VolatilitySurface(db_path=str(DB_PATH))
         if vol_surface.load_surface(latest_data['spot']['date']):
             atm_vol = vol_surface.get_vol(spot, time_to_maturity, spot)
             # Get implied vol at the strike
@@ -765,7 +765,7 @@ def main():
                 })
         
         df_sensitivity = pd.DataFrame(sensitivity_data)
-        st.dataframe(df_sensitivity, use_container_width=True, hide_index=True)
+        st.dataframe(df_sensitivity, width="stretch", hide_index=True)
     
     with tab2:
         st.header("Greeks Analysis")
@@ -933,7 +933,7 @@ def main():
                 showlegend=False
             )
             
-            st.plotly_chart(fig_delta, use_container_width=True)
+            st.plotly_chart(fig_delta, width="stretch")
             
             # Summary statistics
             col1, col2, col3 = st.columns(3)
@@ -1030,7 +1030,7 @@ def main():
                 yaxis_title="Option Price ($)",
                 height=400
             )
-            st.plotly_chart(fig_vol, use_container_width=True)
+            st.plotly_chart(fig_vol, width="stretch")
         
         with col2:
             st.subheader("Spot Sensitivity")
@@ -1073,7 +1073,7 @@ def main():
                 yaxis_title="Option Price ($)",
                 height=400
             )
-            st.plotly_chart(fig_spot, use_container_width=True)
+            st.plotly_chart(fig_spot, width="stretch")
 
 if __name__ == "__main__":
     main()

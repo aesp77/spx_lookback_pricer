@@ -365,8 +365,8 @@ class SPXDataLoader:
             if years > 0:
                 # Return rf_years format to match your working code
                 ticker_to_rf[t] = f"rf_{round(years, 6)}"
-        
-        print(f"Retrieved {len(ticker_to_rf)} ticker → year-fraction mappings")
+
+        print(f"Retrieved {len(ticker_to_rf)} ticker -> year-fraction mappings")
         return ticker_to_rf
     
     # =================== Database Save Methods ===================
